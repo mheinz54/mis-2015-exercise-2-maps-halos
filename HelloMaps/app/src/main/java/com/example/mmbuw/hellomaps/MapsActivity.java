@@ -1,17 +1,29 @@
 package com.example.mmbuw.hellomaps;
 
-import android.support.v4.app.FragmentActivity;
+import android.app.Activity;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.View;
+import android.widget.EditText;
 
 import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.UiSettings;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-public class MapsActivity extends FragmentActivity
+import java.util.HashSet;
+import java.util.Set;
+
+public class MapsActivity extends Activity implements OnMapReadyCallback
 {
 
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
+    private EditText mMessageView;
+    private static final String SHARED_PREF = "MY_MAP_APP";
+    private static final String PREF_MARKERS = "PREF_MARKERS";
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
@@ -19,6 +31,15 @@ public class MapsActivity extends FragmentActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
         setUpMapIfNeeded();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu)
+    {
+        getMenuInflater().inflate(R.menu.maps,menu);
+        View view = (View) menu.findItem(R.id.message).getActionView();
+        mMessageView = (EditText) view.findViewById(R.id.messageView);
+        return super.onCreateOptionsMenu(menu);
     }
 
     @Override
@@ -33,7 +54,7 @@ public class MapsActivity extends FragmentActivity
      * installed) and the map has not already been instantiated.. This will ensure that we only ever
      * call {@link #setUpMap()} once when {@link #mMap} is not null.
      * <p/>
-     * If it isn't installed {@link SupportMapFragment} (and
+     * If it isn't installed {@link MapFragment} (and
      * {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for the user to
      * install/update the Google Play services APK on their device.
      * <p/>
@@ -49,13 +70,7 @@ public class MapsActivity extends FragmentActivity
         if (mMap == null)
         {
             // Try to obtain the map from the SupportMapFragment.
-            mMap = ((SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map))
-                    .getMap();
-            // Check if we were successful in obtaining the map.
-            if (mMap != null)
-            {
-                setUpMap();
-            }
+            ((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMapAsync(this);
         }
     }
 
@@ -67,6 +82,56 @@ public class MapsActivity extends FragmentActivity
      */
     private void setUpMap()
     {
-        mMap.addMarker(new MarkerOptions().position(new LatLng(0, 0)).title("Marker"));
+        mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+        UiSettings settings = mMap.getUiSettings();
+        settings.setTiltGesturesEnabled(false);
+        settings.setRotateGesturesEnabled(false);
+
+        mMap.setOnMapLongClickListener(new GoogleMap.OnMapLongClickListener()
+        {
+            @Override
+            public void onMapLongClick(LatLng latLng)
+            {
+                String title = mMessageView.getText().toString();
+                if(title.length() == 0)
+                    title = "Marker";
+                mMap.addMarker(new MarkerOptions().position(latLng).title(title));
+                saveMarker(title,latLng);
+            }
+        });
+
+        SharedPreferences pref = getSharedPreferences(SHARED_PREF,MODE_PRIVATE);
+        Set<String> markers = pref.getStringSet(PREF_MARKERS,new HashSet<String>());
+        for(String marker : markers)
+        {
+            String[] pieces = marker.split(",");
+            if(pieces.length == 3)
+            {
+                double lat = Double.parseDouble(pieces[1]);
+                double lon = Double.parseDouble(pieces[2]);
+                mMap.addMarker(new MarkerOptions().position(new LatLng(lat,lon)).title(pieces[0]));
+            }
+        }
+    }
+
+    @Override
+    public void onMapReady(GoogleMap googleMap)
+    {
+        mMap = googleMap;
+        setUpMap();
+    }
+
+    private void saveMarker(String title, LatLng latLng)
+    {
+        SharedPreferences pref = getSharedPreferences(SHARED_PREF,MODE_PRIVATE);
+        Set<String> markers = pref.getStringSet(PREF_MARKERS,new HashSet<String>());
+        String lat = Double.toString(latLng.latitude);
+        String lng = Double.toString(latLng.longitude);
+        markers.add(title + "," + lat + "," + lng);
+
+        SharedPreferences.Editor editor = pref.edit();
+        editor.clear();
+        editor.putStringSet(PREF_MARKERS, markers);
+        editor.apply();
     }
 }
