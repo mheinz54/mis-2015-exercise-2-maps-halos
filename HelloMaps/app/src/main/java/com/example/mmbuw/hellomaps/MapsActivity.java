@@ -11,6 +11,9 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.UiSettings;
+import com.google.android.gms.maps.model.CameraPosition;
+import com.google.android.gms.maps.model.Circle;
+import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
@@ -24,13 +27,16 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
     private EditText mMessageView;
     private static final String SHARED_PREF = "MY_MAP_APP";
     private static final String PREF_MARKERS = "PREF_MARKERS";
+    private Set<Marker> mMarkers;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
-        setUpMapIfNeeded();
+        mMarkers = new HashSet<Marker>();
+
+    //    setUpMapIfNeeded();
     }
 
     @Override
@@ -82,34 +88,32 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
      */
     private void setUpMap()
     {
-        mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
-        UiSettings settings = mMap.getUiSettings();
-        settings.setTiltGesturesEnabled(false);
-        settings.setRotateGesturesEnabled(false);
-
-        mMap.setOnMapLongClickListener(new GoogleMap.OnMapLongClickListener()
+        if (mMap != null)
         {
-            @Override
-            public void onMapLongClick(LatLng latLng)
-            {
-                String title = mMessageView.getText().toString();
-                if(title.length() == 0)
-                    title = "Marker";
-                mMap.addMarker(new MarkerOptions().position(latLng).title(title));
-                saveMarker(title,latLng);
-            }
-        });
+            mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+            UiSettings settings = mMap.getUiSettings();
+            settings.setTiltGesturesEnabled(false);
+            settings.setRotateGesturesEnabled(false);
 
-        SharedPreferences pref = getSharedPreferences(SHARED_PREF,MODE_PRIVATE);
-        Set<String> markers = pref.getStringSet(PREF_MARKERS,new HashSet<String>());
-        for(String marker : markers)
-        {
-            String[] pieces = marker.split(",");
-            if(pieces.length == 3)
+            mMap.setOnMapLongClickListener(mMapLongClickListener);
+            mMap.setOnCameraChangeListener(mOnCameraChangeListener);
+
+            SharedPreferences pref = getSharedPreferences(SHARED_PREF, MODE_PRIVATE);
+            Set<String> markers = pref.getStringSet(PREF_MARKERS, new HashSet<String>());
+            for (String marker : markers)
             {
-                double lat = Double.parseDouble(pieces[1]);
-                double lon = Double.parseDouble(pieces[2]);
-                mMap.addMarker(new MarkerOptions().position(new LatLng(lat,lon)).title(pieces[0]));
+                String[] pieces = marker.split(",");
+                if (pieces.length == 3)
+                {
+                    String title = pieces[0];
+                    double lat = Double.parseDouble(pieces[1]);
+                    double lon = Double.parseDouble(pieces[2]);
+                    LatLng latLng = new LatLng(lat, lon);
+
+                    mMap.addMarker(new MarkerOptions().position(latLng).title(title));
+                    double radius = findDistance(mMap.getCameraPosition().target, latLng);
+                    mMarkers.add(new Marker(latLng,title,createCircle(latLng,radius)));
+                }
             }
         }
     }
@@ -121,17 +125,77 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         setUpMap();
     }
 
-    private void saveMarker(String title, LatLng latLng)
+    private void saveMarker(LatLng latLng)
     {
-        SharedPreferences pref = getSharedPreferences(SHARED_PREF,MODE_PRIVATE);
-        Set<String> markers = pref.getStringSet(PREF_MARKERS,new HashSet<String>());
-        String lat = Double.toString(latLng.latitude);
-        String lng = Double.toString(latLng.longitude);
-        markers.add(title + "," + lat + "," + lng);
+        String title = mMessageView.getText().toString();
+        if(title.length() == 0)
+            title = "Marker";
 
+        mMap.addMarker(new MarkerOptions().position(latLng).title(title));
+        double radius = findDistance(mMap.getCameraPosition().target, latLng);
+        mMarkers.add(new Marker(latLng,title,createCircle(latLng, radius)));
+
+        Set<String> strMarkers = new HashSet<String>();
+        for(Marker marker : mMarkers)
+        {
+            strMarkers.add(marker.toString());
+        }
+
+        SharedPreferences pref = getSharedPreferences(SHARED_PREF,MODE_PRIVATE);
         SharedPreferences.Editor editor = pref.edit();
         editor.clear();
-        editor.putStringSet(PREF_MARKERS, markers);
+        editor.putStringSet(PREF_MARKERS, strMarkers);
         editor.apply();
     }
+
+    private Circle createCircle(LatLng latLng, double meters)
+    {
+        CircleOptions circleOptions = new CircleOptions()
+                .center(latLng)
+                .radius(meters); // In meters
+
+        return mMap.addCircle(circleOptions);
+    }
+
+    // equation from: http://andrew.hedges.name/experiments/haversine/
+    private double findDistance(LatLng latLng1, LatLng latLng2)
+    {
+        double lat1 = Math.toRadians(latLng1.latitude);
+        double lat2 = Math.toRadians(latLng2.latitude);
+        double dlon = Math.toRadians(latLng2.longitude - latLng1.longitude);
+        double dlat = Math.toRadians(latLng2.latitude - latLng1.latitude);
+        final long R = 6373;
+        double a = Math.pow(Math.sin(dlat/2),2) +
+                (Math.cos(lat1) * Math.cos(lat2) *
+                        Math.pow(Math.sin(dlon/2),2));
+        double c = 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        double d = R * c;
+
+        return d * 1000;
+    }
+
+    private GoogleMap.OnMapLongClickListener mMapLongClickListener =
+            new GoogleMap.OnMapLongClickListener()
+    {
+        @Override
+        public void onMapLongClick(LatLng latLng)
+        {
+            saveMarker(latLng);
+        }
+    };
+
+    private GoogleMap.OnCameraChangeListener mOnCameraChangeListener =
+            new GoogleMap.OnCameraChangeListener()
+    {
+        @Override
+        public void onCameraChange(CameraPosition cameraPosition)
+        {
+            LatLng cameraLatLng = cameraPosition.target;
+            for(Marker marker : mMarkers)
+            {
+                double radius = findDistance(cameraLatLng,marker.getLatLng());
+                marker.getCircle().setRadius(radius);
+            }
+        }
+    };
 }
