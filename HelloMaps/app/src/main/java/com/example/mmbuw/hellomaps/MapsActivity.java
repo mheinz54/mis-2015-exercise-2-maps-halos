@@ -16,6 +16,7 @@ import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.VisibleRegion;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -36,14 +37,14 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         setContentView(R.layout.activity_maps);
         mMarkers = new HashSet<Marker>();
 
-    //    setUpMapIfNeeded();
+        setUpMapIfNeeded();
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu)
     {
         getMenuInflater().inflate(R.menu.maps,menu);
-        View view = (View) menu.findItem(R.id.message).getActionView();
+        View view = menu.findItem(R.id.message).getActionView();
         mMessageView = (EditText) view.findViewById(R.id.messageView);
         return super.onCreateOptionsMenu(menu);
     }
@@ -55,21 +56,16 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         setUpMapIfNeeded();
     }
 
-    /**
-     * Sets up the map if it is possible to do so (i.e., the Google Play services APK is correctly
-     * installed) and the map has not already been instantiated.. This will ensure that we only ever
-     * call {@link #setUpMap()} once when {@link #mMap} is not null.
-     * <p/>
-     * If it isn't installed {@link MapFragment} (and
-     * {@link com.google.android.gms.maps.MapView MapView}) will show a prompt for the user to
-     * install/update the Google Play services APK on their device.
-     * <p/>
-     * A user can return to this FragmentActivity after following the prompt and correctly
-     * installing/updating/enabling the Google Play services. Since the FragmentActivity may not
-     * have been completely destroyed during this process (it is likely that it would only be
-     * stopped or paused), {@link #onCreate(Bundle)} may not be called again so we should call this
-     * method in {@link #onResume()} to guarantee that it will be called.
-     */
+    @Override
+    public void onMapReady(GoogleMap googleMap)
+    {
+        if(mMap == null) //just do it once
+        {
+            mMap = googleMap;
+            setUpMap();
+        }
+    }
+
     private void setUpMapIfNeeded()
     {
         // Do a null check to confirm that we have not already instantiated the map.
@@ -80,50 +76,20 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         }
     }
 
-    /**
-     * This is where we can add markers or lines, add listeners or move the camera. In this case, we
-     * just add a marker near Africa.
-     * <p/>
-     * This should only be called once and when we are sure that {@link #mMap} is not null.
-     */
     private void setUpMap()
     {
-        if (mMap != null)
-        {
-            mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
-            UiSettings settings = mMap.getUiSettings();
-            settings.setTiltGesturesEnabled(false);
-            settings.setRotateGesturesEnabled(false);
+        mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+        UiSettings settings = mMap.getUiSettings();
+        settings.setTiltGesturesEnabled(false);
+        settings.setRotateGesturesEnabled(false);
 
-            mMap.setOnMapLongClickListener(mMapLongClickListener);
-            mMap.setOnCameraChangeListener(mOnCameraChangeListener);
+        mMap.setOnMapLongClickListener(mMapLongClickListener);
+        mMap.setOnCameraChangeListener(mOnCameraChangeListener);
 
-            SharedPreferences pref = getSharedPreferences(SHARED_PREF, MODE_PRIVATE);
-            Set<String> markers = pref.getStringSet(PREF_MARKERS, new HashSet<String>());
-            for (String marker : markers)
-            {
-                String[] pieces = marker.split(",");
-                if (pieces.length == 3)
-                {
-                    String title = pieces[0];
-                    double lat = Double.parseDouble(pieces[1]);
-                    double lon = Double.parseDouble(pieces[2]);
-                    LatLng latLng = new LatLng(lat, lon);
-
-                    mMap.addMarker(new MarkerOptions().position(latLng).title(title));
-                    double radius = findDistance(mMap.getCameraPosition().target, latLng);
-                    mMarkers.add(new Marker(latLng,title,createCircle(latLng,radius)));
-                }
-            }
-        }
+        loadMarkers();
     }
 
-    @Override
-    public void onMapReady(GoogleMap googleMap)
-    {
-        mMap = googleMap;
-        setUpMap();
-    }
+
 
     private void saveMarker(LatLng latLng)
     {
@@ -132,8 +98,7 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
             title = "Marker";
 
         mMap.addMarker(new MarkerOptions().position(latLng).title(title));
-        double radius = findDistance(mMap.getCameraPosition().target, latLng);
-        mMarkers.add(new Marker(latLng,title,createCircle(latLng, radius)));
+        mMarkers.add(new Marker(latLng,title,createCircle(latLng)));
 
         Set<String> strMarkers = new HashSet<String>();
         for(Marker marker : mMarkers)
@@ -148,13 +113,69 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         editor.apply();
     }
 
-    private Circle createCircle(LatLng latLng, double meters)
+    private void loadMarkers()
     {
+        SharedPreferences pref = getSharedPreferences(SHARED_PREF, MODE_PRIVATE);
+        Set<String> markers = pref.getStringSet(PREF_MARKERS, new HashSet<String>());
+        for (String marker : markers)
+        {
+            String[] pieces = marker.split(",");
+            if (pieces.length == 3)
+            {
+                String title = pieces[0];
+                double lat = Double.parseDouble(pieces[1]);
+                double lon = Double.parseDouble(pieces[2]);
+                LatLng latLng = new LatLng(lat, lon);
+
+                mMap.addMarker(new MarkerOptions().position(latLng).title(title));
+                mMarkers.add(new Marker(latLng,title,createCircle(latLng)));
+            }
+        }
+    }
+
+    private Circle createCircle(LatLng latLng)
+    {
+        double meters = circleSize(latLng);
         CircleOptions circleOptions = new CircleOptions()
                 .center(latLng)
                 .radius(meters); // In meters
 
         return mMap.addCircle(circleOptions);
+    }
+
+    private double circleSize(LatLng latLng)
+    {
+        double radius = 0.0;
+        VisibleRegion region = mMap.getProjection().getVisibleRegion();
+
+        if(!region.latLngBounds.contains(latLng))
+        {
+            double latPadding = Math.abs(region.farRight.latitude
+                    - region.nearLeft.latitude) * 0.02;
+            double lonPadding = Math.abs(region.farRight.longitude
+                    - region.nearLeft.longitude) * 0.02;
+
+            double longitude, latitude;
+            if(latLng.longitude < region.farLeft.longitude)
+                longitude = region.farLeft.longitude + lonPadding;
+            else if(latLng.longitude > region.farLeft.longitude
+                    && latLng.longitude < region.farRight.longitude)
+                longitude = latLng.longitude;
+            else
+                longitude = region.farRight.longitude - lonPadding;
+
+            if(latLng.latitude < region.nearLeft.latitude)
+                latitude = region.nearLeft.latitude + latPadding;
+            else if(latLng.latitude > region.nearLeft.latitude
+                    && latLng.latitude < region.farLeft.latitude)
+                latitude = latLng.latitude;
+            else
+                latitude = region.farLeft.latitude - latPadding;
+
+            LatLng nearPoint = new LatLng(latitude,longitude);
+            radius = findDistance(nearPoint, latLng);
+        }
+        return radius;
     }
 
     // equation from: http://andrew.hedges.name/experiments/haversine/
@@ -164,10 +185,10 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         double lat2 = Math.toRadians(latLng2.latitude);
         double dlon = Math.toRadians(latLng2.longitude - latLng1.longitude);
         double dlat = Math.toRadians(latLng2.latitude - latLng1.latitude);
-        final long R = 6373;
-        double a = Math.pow(Math.sin(dlat/2),2) +
+        final double R = 6373.0;
+        double a = Math.pow(Math.sin(dlat/2.0),2) +
                 (Math.cos(lat1) * Math.cos(lat2) *
-                        Math.pow(Math.sin(dlon/2),2));
+                        Math.pow(Math.sin(dlon/2.0),2));
         double c = 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
         double d = R * c;
 
@@ -193,7 +214,7 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
             LatLng cameraLatLng = cameraPosition.target;
             for(Marker marker : mMarkers)
             {
-                double radius = findDistance(cameraLatLng,marker.getLatLng());
+                double radius = circleSize(marker.getLatLng());
                 marker.getCircle().setRadius(radius);
             }
         }
