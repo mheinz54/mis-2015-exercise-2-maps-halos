@@ -211,7 +211,6 @@ public class MapsActivity extends Activity implements OnMapReadyCallback
         @Override
         public void onCameraChange(CameraPosition cameraPosition)
         {
-            LatLng cameraLatLng = cameraPosition.target;
             for(Marker marker : mMarkers)
             {
                 double radius = circleSize(marker.getLatLng());
